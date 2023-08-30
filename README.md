@@ -5,12 +5,12 @@ All ressources in one command
 First, create a local copy of ressources tree:
 ```
 arioc -r
-``̀`
+```
 
 Then, make a word based research:
 ```
 arioc -s xss
-``̀̀`
+```
 
 Get article links containing the searched word from:
 - Hacktrickz
