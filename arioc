@@ -1,0 +1,197 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# coding=utf8
+import argparse
+import shutil
+import os
+import subprocess
+import requests
+from bs4 import BeautifulSoup
+import requests
+import urllib3.exceptions
+import warnings
+
+def getLinksFromWebpage(url:str) -> list:
+	"""
+		Gather all URL from a webpage an apply some
+		Portswigger website pecific filter
+		:param url: webpage to parse
+		:return links: list of identified link
+	"""
+	urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+	try:
+		response = requests.get(url, verify=False)
+		response.raise_for_status() 
+		soup = BeautifulSoup(response.content, 'html.parser')
+		links = []
+
+		for link in soup.find_all('a'):
+			href = link.get('href')
+			if "powrtswigger" in url and href and href.startswith('/web-security'):
+				links.append(href)
+			if "gouv" in url and  href and href.endswith('.pdf'):
+				links.append(href)
+
+		return links
+	except requests.exceptions.RequestException as e:
+		print(f"An error occurred: {e}")
+		return []
+
+def extendSearch(searchList:list) -> list:
+	"""
+		Duplicate some search terms containing space to match with different 
+		format : "file include" will be duplicated as "file-include"
+		:param searchList: list of word
+		:return extendedSearchList: list of word with formatted duplicates
+	"""
+	extendedSearchList = []
+	for searchword in searchList:
+		if " " in searchword:
+			extendedSearchList.append(searchword.replace(" ","-"))
+		elif "-" in searchword:
+			extendedSearchList.append(searchword.replace("-"," "))
+		# Also add original search
+		extendedSearchList.append(searchword)
+	return extendedSearchList
+
+def createDir(dirName:str) -> None:
+	"""
+		Create a directory if doesn't already exists
+		:param dirName: Name of the directory to create
+		:return: None 
+	"""
+	if not os.path.isdir(dirName):
+		os.mkdir(dirName)	
+
+def update(repos:dict, repoRootDir:str, rootDir:str) -> None:
+	"""
+		Create or update repositories
+		:param repos: dictionnary of repository name:(github url, website url)
+		:param reprootDir: path of the repository directory user's home
+		:param rootDir: path of the script root directory
+		:return: None
+	"""
+	try:
+		shutil.rmtree(repoRootDir)
+	except:
+		pass
+	
+	createDir(repoRootDir)
+	print("\033[92m[+]\033[0m Updating repos tree")
+	for repoName in repos:
+		repoURL = repos[repoName][0]
+		print(f"\033[92m[+]\033[0m {repoName} : {repoURL}")
+		
+		repoDir=repoRootDir+"/"+repoName
+		createDir(repoDir)
+		
+		# If github repo, is giter.sh script
+		if repoURL.endswith("git") :
+			os.system(f"cd {repoDir};rm tree 2>/dev/null;git config --global --add safe.directory {repoDir};git init;git remote add origin {repoURL};git fetch;git ls-tree -r origin/master |grep '.md' |expand -t 1 |cut -d ' ' -f 4-100 > {repoDir}/tree.txt");
+		elif "portswigger" in repoURL:
+			links = getLinksFromWebpage(repoURL)
+			f = open(f"{repoDir}/tree.txt", "w")
+			for link in links:
+				# Filter on /web-security/ dir and avoid 
+				# multiple same URL with anchor
+				if "web-security" in link and not "#" in link:
+			   		f.write(link+"\n")
+			f.close()
+		elif "gouv" in repoURL:
+			links = getLinksFromWebpage(repoURL)
+			f = open(f"{repoDir}/tree.txt", "w")
+			for link in links:
+				# Filter on /web-security/ dir and avoid 
+				# multiple same URL with anchor
+				if "/uploads" in link :
+			   		f.write(link+"\n")
+			f.close()
+
+def parseTrees(search:str, repoDir:str) -> list:
+	"""
+		Parse existing repositories tree for and look
+		for a specific term in it
+		:param search: searched word
+		:param rootDir: path of the script root directory
+		:return: list of found file
+	"""
+	foundFiles = []
+	treeFile=f"{repoDir}/tree.txt"
+
+	if os.path.isfile(treeFile):
+		with open(treeFile, 'r') as fp:
+			for l_no, line in enumerate(fp):
+				if search.lower() in line.lower():
+					foundFiles.append(line)
+	else:
+		print(f"[-] {repoDir} doesn't exists")
+
+	return foundFiles
+
+def URLtranslate(file:str, url:str) -> str:
+	"""
+		Format to URL a repository filename
+		:param file: filename such as web-services/inputs/file-inclusion/lfi-to-rce/proc.md
+		:param url: Website destination URL
+	"""
+	# Intentionnal multiline for better understanding
+	URLtranslated=url+"/"+file
+	URLtranslated = URLtranslated.replace(".md","")
+	URLtranslated = URLtranslated.replace(" ","%20")
+	URLtranslated = URLtranslated.replace("readme","")
+	URLtranslated = URLtranslated.replace("README","")
+	URLtranslated = URLtranslated.strip()
+	return URLtranslated
+
+def main(args) -> None:
+	rootDir=os.path.realpath(os.path.dirname(__file__))
+	repoRootDir=os.path.expanduser('~')+"/.ocarRepos"
+	# repo[RepoName][0] : repository URL (for tree parsing)
+	# repo[RepoName][1] : website URL (for clickable links)
+	repos = { "Hacktrickz" : ( 	"https://github.com/carlospolop/hacktricks.git",
+								"https://book.hacktricks.xyz"),
+			  "HacktrickzCloud" : ( 	"https://github.com/carlospolop/hacktricks-cloud.git",
+								"https://cloud.hacktricks.xyz/"),
+			  "PayloadAllTheThings" : (	"https://github.com/swisskyrepo/PayloadsAllTheThings.git",
+			  							"https://swisskyrepo.github.io/PayloadsAllTheThings"),
+			  "TheHackerRecipes": (	"https://github.com/ShutdownRepo/The-Hacker-Recipes.git",
+			  						"https://www.thehacker.recipes"),
+			  "ANSSI": (	"https://www.ssi.gouv.fr/entreprise/bonnes-pratiques/",
+			  				"https://www.ssi.gouv.fr/"),
+			  "OWASP": (	"https://github.com/OWASP/wstg.git",
+			  				"https://owasp.org/www-project-web-security-testing-guide/latest/"),
+			  "Ired.teams":(	"https://github.com/mantvydasb/RedTeaming-Tactics-and-Techniques.git",
+			  					"https://www.ired.team/"),
+			  "PortSwigger": (	"https://portswigger.net/web-security/all-materials/detailed",
+			  					"https://portswigger.net/"),
+			  "PortSwiggerLabs": (	"https://portswigger.net/web-security/all-labs",
+			  						"https://portswigger.net/"),
+			}
+	if args.update:
+		update(repos, repoRootDir, rootDir)
+
+	if args.search != "":
+		searchList = extendSearch(args.search.split(","))
+		for repoName in repos:
+			print(f"\033[1;31m================> \033[93m{repoName} \033[0m")	
+			for search in searchList:
+				search = search
+				foundFiles = parseTrees(search, repoRootDir+"/"+repoName)
+				for file in foundFiles:
+					# if name comes from githubRepos, it should be URL translated
+					if "github" in repos[repoName][0]:
+						# Replace "/documents" that exists in OWASP github repo 
+						# but not in website URL
+						if "OWASP" in repos[repoName][0]:
+							file = file.replace('document',"")
+						print(f"   \033[1;92m[X]\033[0m "+ URLtranslate(file, repos[repoName][1]) )
+					else:
+						print(f"   \033[1;92m[X]\033[0m "+repos[repoName][1]+file.strip())
+
+if __name__ == '__main__':
+	# create the top-level parser
+	parser = argparse.ArgumentParser(prog='PROG')
+	parser.add_argument("-s", '--search', help='Search term', required=False, default="")
+	parser.add_argument("-u", '--update', help='Update/Create repo', action='store_true', required=False)
+	args = parser.parse_args()
+	main(args)
