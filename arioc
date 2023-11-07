@@ -11,6 +11,21 @@ import requests
 import urllib3.exceptions
 import warnings
 
+def getNumberOfPage(url: str) -> int:
+    numberOfPage = 0
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    response = requests.get(url, verify=False)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    for pager_items in soup.find_all('a', {"title": "Derniere page"}):
+        # Extract the text inside the <span> tag within the <a> element
+        pageNumber = pager_items.find('span', {'aria-hidden': True}).text
+        # Convert the extracted text to an integer
+        numberOfPage = int(pageNumber)
+        break  # Break the loop if you found the first matching element
+    return numberOfPage
+
+
+
 def getLinksFromWebpage(url:str) -> list:
 	"""
 		Gather all URL from a webpage an apply some
@@ -27,9 +42,9 @@ def getLinksFromWebpage(url:str) -> list:
 
 		for link in soup.find_all('a'):
 			href = link.get('href')
-			if "powrtswigger" in url and href and href.startswith('/web-security'):
+			if "portswigger" in url and href and href.startswith('/web-security'):
 				links.append(href)
-			if "gouv" in url and  href and href.endswith('.pdf'):
+			if "gouv" in url and  href and "/publications/" in href:
 				links.append(href)
 
 		return links
@@ -98,13 +113,22 @@ def update(repos:dict, repoRootDir:str, rootDir:str) -> None:
 			   		f.write(link+"\n")
 			f.close()
 		elif "gouv" in repoURL:
-			links = getLinksFromWebpage(repoURL)
+			# Get number of page in the pager
+			numerOfPage = getNumberOfPage(repoURL)
+			indexPage = 0
+			pageLinks=[]
+			
+			# Build a list of URL to manage website pager
+			while indexPage <= numerOfPage:
+				pageLinks.append(f"https://cyber.gouv.fr/publications?field_type_de_publication_target_id%5B934%5D=934&page={str(indexPage)}")
+				indexPage+=1
+
+			# For each link of each page, get publication URL
 			f = open(f"{repoDir}/tree.txt", "w")
-			for link in links:
-				# Filter on /web-security/ dir and avoid 
-				# multiple same URL with anchor
-				if "/uploads" in link :
-			   		f.write(link+"\n")
+			for page in pageLinks:
+				links = getLinksFromWebpage(page)
+				for link in links:
+				   	f.write(link+"\n")
 			f.close()
 
 def parseTrees(search:str, repoDir:str) -> list:
@@ -145,28 +169,29 @@ def URLtranslate(file:str, url:str) -> str:
 
 def main(args) -> None:
 	rootDir=os.path.realpath(os.path.dirname(__file__))
-	repoRootDir=os.path.expanduser('~')+"/.ocarRepos"
+	repoRootDir=os.path.expanduser('~')+"/.ariocRepos"
 	# repo[RepoName][0] : repository URL (for tree parsing)
 	# repo[RepoName][1] : website URL (for clickable links)
 	repos = { "Hacktrickz" : ( 	"https://github.com/carlospolop/hacktricks.git",
-								"https://book.hacktricks.xyz"),
-			  "HacktrickzCloud" : ( 	"https://github.com/carlospolop/hacktricks-cloud.git",
-								"https://cloud.hacktricks.xyz/"),
-			  "PayloadAllTheThings" : (	"https://github.com/swisskyrepo/PayloadsAllTheThings.git",
-			  							"https://swisskyrepo.github.io/PayloadsAllTheThings"),
-			  "TheHackerRecipes": (	"https://github.com/ShutdownRepo/The-Hacker-Recipes.git",
-			  						"https://www.thehacker.recipes"),
-			  "ANSSI": (	"https://www.ssi.gouv.fr/entreprise/bonnes-pratiques/",
-			  				"https://www.ssi.gouv.fr/"),
-			  "OWASP": (	"https://github.com/OWASP/wstg.git",
-			  				"https://owasp.org/www-project-web-security-testing-guide/latest/"),
-			  "Ired.teams":(	"https://github.com/mantvydasb/RedTeaming-Tactics-and-Techniques.git",
-			  					"https://www.ired.team/"),
-			  "PortSwigger": (	"https://portswigger.net/web-security/all-materials/detailed",
-			  					"https://portswigger.net/"),
-			  "PortSwiggerLabs": (	"https://portswigger.net/web-security/all-labs",
-			  						"https://portswigger.net/"),
-			}
+									"https://book.hacktricks.xyz"),
+				  "HacktrickzCloud" : ( 	"https://github.com/carlospolop/hacktricks-cloud.git",
+									"https://cloud.hacktricks.xyz/"),
+				  "PayloadAllTheThings" : (	"https://github.com/swisskyrepo/PayloadsAllTheThings.git",
+				  							"https://swisskyrepo.github.io/PayloadsAllTheThings"),
+				  "TheHackerRecipes": (	"https://github.com/ShutdownRepo/The-Hacker-Recipes.git",
+				  						"https://www.thehacker.recipes"),
+				  "ANSSI": (	"https://cyber.gouv.fr/publications?field_type_de_publication_target_id%5B934%5D=934",
+			  				"https://cyber.gouv.fr/"),
+				  "OWASP": (	"https://github.com/OWASP/wstg.git",
+				  				"https://owasp.org/www-project-web-security-testing-guide/latest/"),
+				  "Ired.teams":(	"https://github.com/mantvydasb/RedTeaming-Tactics-and-Techniques.git",
+				  					"https://www.ired.team/"),
+				  "PortSwigger": (	"https://portswigger.net/web-security/all-materials/detailed",
+				  					"https://portswigger.net/"),
+				  "PortSwiggerLabs": (	"https://portswigger.net/web-security/all-labs",
+				  						"https://portswigger.net/"),
+				}
+	
 	if args.update:
 		update(repos, repoRootDir, rootDir)
 
