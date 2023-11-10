@@ -4,7 +4,7 @@ All ressources in one command
 # Usage
 First, create a local copy of ressources tree:
 ```
-arioc -r
+arioc -u
 ```
 
 Then, make a word based research:
